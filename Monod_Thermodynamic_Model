@@ -1,0 +1,103 @@
+---
+title: "20190927_Modeling Thermodynamics into Monod models"
+author: "Alexandra L. McCully"
+date: "9/27/2019"
+output: html_document
+---
+## Overview
+Simulations that incorporate thermodynamics into kinetic Monod modeling. Assumes that the substrate concentration is directly proportional to the max growth "potential" of a cell. 
+
+Initial equations derived from https://doi.org/10.1016/j.bej.2006.05.022
+
+
+## Set working directory
+```{r}
+rm(list=ls()) # clears your working directory
+getwd() # tells you your current working directory
+```
+
+## Install packages
+```{r}
+install.packages("deSolve") # run this first time
+require("deSolve") # installs any dependencies
+```
+
+## Mutualism function
+```{r}
+mutfun <- function(times, y, parms) {
+  with(as.list(c(y, parms)), { 
+    G <- dGo + (R*t*(log(((A/1000)^1)*(55^4)/(((C/1000)^2)*((H/1000)^4))))) #Gibbs free energy available per reaction (kJ/mol); Divide substrate by 1000 to get M; H20 is ~55M; Equation stoichiometry depends on the type of metabolism modeled
+    u <- uMax*(C/(Kc+C))*(H/(Kh+H))*(1/(1+(2.71828^(0.07*(G+30)))))#  #Acetogen growth rate dependent on max growth rate, substrate concentrations, and the Gibbs free energy; Thermodynamics is incorporated via sigmoidal function centered around -30 due to Go of ATP formation being -30 kJ/mol
+    dNdt <- (u*N)   #Change in Acetogen 1 (cells/mL)
+    dCdt <- -(u*N/Yc)*(C/(Kc+C)) #Change in CO2 (mM/h)
+    dHdt <- -(u*N/Yh)*(H/(Kh+H))  #Change in H2 (mM/h)
+    dAdt  <- (u*N*Fa*0.5)  #Change in acetate (mM/h)
+    return(list(c(dNdt, dCdt, dHdt, dAdt))) #, u, 
+  })
+}
+```
+
+## Parameters and initial conditions
+```{r}
+# Parameters
+parms <- c(
+    dGo = -95, #Sum of Gibbs free energy of products - sum of Gibbs free energy reactants (kJ/mol)
+    uMax = 0.5, # Acetogen 1 max growth rate at 4’C 0.00375 (h^-1);  0.0117 at 20’C; Kotsyurbenko et al. 1996 Antonie van Leeuwenhoek
+    R = 0.008314462618, #Gas constant at 298K (kJ/mol/K)
+    t = 298, #Temperature (K)
+    #u = 0.5,
+    Yc = 8.64*10^6, # Acetogen 1 growth yield on CO2 (cells/mmol substrate consumed); 2.7 g per mol acetate formed from growth on H2+CO2; Tschech et al 1984 Arch Microbiol
+    Yh = 4.24*10^6, #Acetogen 1 growth yield on H2 (cells/mmol substrate consumed); 0.91 or 0.46 g dry cell weight per mol H2, C and H assumed to be 50 and 8% of cell dry weight; Daniel et al 1990 Jbac
+    Kc = 0.0013, #Acetogen half saturation constant for CO2 (mM); Vavilin et al. 2000 Bioresource Technology
+    Kh = 0.082, #Acetogen half saturation constant for H2 at 4’C (mM); Kotsyurbenko et al. 2001 FEMS Micro Ecology; 0.174 at 20’C
+    Fa = 5.48*10^-6) #mM CO2 converted to acetate per acetogen cell/mL (umol/cell); Kane et al 1991 Arch Microbiol
+
+# initial concentrations below
+init <- c( 
+          #dG = 0,
+         # K = 0,
+         # u = 0.5,
+          N = 1, #cells (cell/mL)
+          C = 100, # CO2 (mM)
+          H = 100, # H2 (mM)
+          A = 0.0000001) # Acetate (mM) Don't set to 0!
+Tmax = 100 # hours
+TimeStep = 1 #hours
+Time = seq(0, Tmax, by = TimeStep)
+```
+
+## Output
+```{r}
+out <-  ode(y = init, times = Time, func = mutfun, parms = parms, method = "lsode")
+head(out) # prints first 6 time points
+tail(out) # prints last 6 time points
+write.csv(out, file = "out.csv") # creates comma-delimited file that can be pasted into spreadsheet for graphing
+```
+
+## Plotting
+```{r}
+#Cell/mL
+plot(out[,1], out[,2], xlab = "time (hr)", ylab = "Cells/mL", type = "l", las = 1, 
+     col = "gold", lwd = 4, ylim = c(0, 1*max(out[,2]))) # plot Ac1 biomass
+par(new=T)
+plot(out[,1], out[,3], xlab = "time (hr)", ylab = "Cells/mL", type = "l", las = 1, 
+     col = "red", lwd = 4, ylim = c(0, 1*max(out[,2]))) # plot Ac2 biomass
+par(new=T)
+
+#Metabolites
+plot(out[,1], out[,4], xlab = "time (hr)", ylab = "Metabolite (mM)", type = "l", las = 1, 
+     col = "navy", lwd = 4, ylim = c(0, 1*max(out[,6]))) # plot CO2
+par(new=T)
+plot(out[,1], out[,5], xlab = "time (hr)", ylab = "Metabolite (mM)", type = "l", las = 1, 
+     col = "black", lwd = 4, ylim = c(0, 1*max(out[,6]))) # plot H2
+par(new=T)
+plot(out[,1], out[,6], xlab = "time (hr)", ylab = "Metabolite (mM)", type = "l", las = 1, 
+     col = "cyan", lwd = 4, ylim = c(0, 1*max(out[,6]))) # plot Acetate
+par(new=T)
+
+
+
+#points(out[,1], out[,7], type = "l", col = "purple", lwd = 4)
+#points(out[,1], out[,2], type = "l", col = "green", lwd = 4)
+
+```
